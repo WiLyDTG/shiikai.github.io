@@ -100,6 +100,13 @@ export class MangaTV extends Source {
     return `${this.baseUrl}/manga/${mangaId}`;
   }
 
+  getCloudflareBypassRequest() {
+    return createRequestObject({
+      url: this.baseUrl,
+      method: 'GET'
+    });
+  }
+
   async getMangaDetails(mangaId) {
     const request = createRequestObject({
       url: `${this.baseUrl}/manga/${mangaId}`,
