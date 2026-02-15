@@ -284,7 +284,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MangaTV = void 0;
 const types_1 = require("@paperback/types");
 
-const BASE_URL = "https://www.mangatv.net";
+const BASE_URL = "https://mangatv.net";
+
+// Helper function to decode base64
+function decodeBase64(str) {
+    try {
+        // Pad the string if necessary
+        const padded = str.padEnd(str.length + (4 - str.length % 4) % 4, '=');
+        return decodeURIComponent(escape(atob(padded)));
+    } catch (e) {
+        return null;
+    }
+}
 
 class MangaTV extends types_1.Source {
     constructor() {
@@ -314,27 +325,35 @@ class MangaTV extends types_1.Source {
         const response = await this.requestManager.schedule(request, 1);
         const $ = this.cheerio.load(response.data);
 
+        // Title from entry-title or first h1
         const title = $('h1.entry-title').text().trim() || $('h1').first().text().trim() || "Sin título";
-        const image = $('div.thumb img').attr('src') || $('img.wp-post-image').attr('src') || "";
-        const desc = $('div.entry-content p').first().text().trim() || 
-                     $('div.summary__content p').text().trim() || 
+        
+        // Image from thumb or ts-post-image
+        let image = $('div.thumb img').attr('src') || $('img.ts-post-image').first().attr('src') || "";
+        if (image.startsWith('//')) image = 'https:' + image;
+        
+        // Description from synp or entry-content
+        const desc = $('div.synp p').text().trim() || 
+                     $('div.entry-content').text().trim() || 
                      "Sin descripción";
         
         let status = 0;
-        const statusText = $('div.summary-content:contains("Estado")').text().toLowerCase() ||
-                          $('.post-status .summary-content').text().toLowerCase();
-        if (statusText.includes("finalizado") || statusText.includes("completado")) {
+        const statusText = ($('div.imptdt:contains("Estado") i').text() || 
+                          $('span.type').first().text() || "").toLowerCase();
+        if (statusText.includes("finalizado") || statusText.includes("completado") || statusText.includes("completed")) {
             status = 1;
-        } else if (statusText.includes("pausado")) {
+        } else if (statusText.includes("pausado") || statusText.includes("hiatus")) {
             status = 2;
         }
 
-        const author = $('div.author-content a').text().trim() || 
-                      $('div.summary-content:contains("Autor")').text().trim() ||
+        // Author
+        const author = $('div.imptdt:contains("Autor") i').text().trim() || 
+                      $('span.author').text().trim() ||
                       "Desconocido";
 
+        // Genres/Tags
         const tags = [];
-        $('div.genres-content a, a[rel="tag"]').each((i, el) => {
+        $('div.mgen a, a.genre').each((i, el) => {
             const label = $(el).text().trim();
             if (label) {
                 tags.push(createTag({ id: label.toLowerCase(), label: label }));
@@ -362,22 +381,26 @@ class MangaTV extends types_1.Source {
         const $ = this.cheerio.load(response.data);
 
         const chapters = [];
-        $('li.wp-manga-chapter, ul.version-chap li, div.chapter-list a').each((i, el) => {
+        // MangaTV uses li with div.chbox containing the chapter links
+        $('ul.clstyle li, li[data-num]').each((i, el) => {
             const $el = $(el);
-            let link = $el.find('a').attr('href') || $el.attr('href') || "";
-            let chapterText = $el.find('a').text().trim() || $el.text().trim();
+            const link = $el.find('a.dload').attr('href') || $el.find('div.dt a').attr('href') || "";
             
             if (!link) return;
 
-            const chapterIdMatch = link.match(/\/leer\/([^\/]+)/i) || 
-                                   link.match(/capitulo-(\d+)/i) ||
-                                   link.match(/chapter-(\d+)/i);
-            const chapterId = chapterIdMatch ? chapterIdMatch[1] : `ch-${i}`;
+            // Extract chapter ID from /leer/{chapterId}
+            const chapterIdMatch = link.match(/\/leer\/([^\/\?]+)/i);
+            const chapterId = chapterIdMatch ? chapterIdMatch[1] : "";
+            
+            if (!chapterId) return;
 
+            // Get chapter number from chapternum span
+            const chapterText = $el.find('span.chapternum').first().text().trim();
             const chapNumMatch = chapterText.match(/(\d+(?:\.\d+)?)/);
             const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : i + 1;
 
-            const dateText = $el.find('.chapter-release-date, span.chapter-time').text().trim();
+            // Get date
+            const dateText = $el.find('span.chapterdate').text().trim();
             let time = new Date();
             if (dateText) {
                 const parsed = Date.parse(dateText);
@@ -394,7 +417,7 @@ class MangaTV extends types_1.Source {
             }));
         });
 
-        return chapters.length > 0 ? chapters.reverse() : [];
+        return chapters;
     }
 
     async getChapterDetails(mangaId, chapterId) {
@@ -403,16 +426,27 @@ class MangaTV extends types_1.Source {
             method: "GET"
         });
         const response = await this.requestManager.schedule(request, 1);
-        const $ = this.cheerio.load(response.data);
+        const html = response.data;
 
         const pages = [];
-        $('div.reading-content img, div.page-break img, img.wp-manga-chapter-img').each((i, el) => {
-            let src = $(el).attr('data-src') || $(el).attr('src') || "";
-            src = src.trim();
-            if (src && !src.includes('logo') && !src.includes('banner')) {
-                pages.push(src);
+        
+        // MangaTV encodes images in base64 in the HTML
+        // Pattern: atob|{base64_image1}|{base64_image2}|...
+        const atobMatch = html.match(/atob\|([^"]+)"/);
+        if (atobMatch) {
+            const parts = atobMatch[1].split('|');
+            for (const part of parts) {
+                // Skip non-image parts (like variable names)
+                if (part.length < 20) continue;
+                
+                const decoded = decodeBase64(part);
+                if (decoded && (decoded.includes('mangatv.net') || decoded.includes('.webp') || decoded.includes('.jpg') || decoded.includes('.png'))) {
+                    let url = decoded.trim();
+                    if (url.startsWith('//')) url = 'https:' + url;
+                    pages.push(url);
+                }
             }
-        });
+        }
 
         return createChapterDetails({
             id: chapterId,
@@ -424,8 +458,8 @@ class MangaTV extends types_1.Source {
     async getSearchResults(query, metadata) {
         const page = metadata?.page ?? 1;
         const searchUrl = query.title 
-            ? `${BASE_URL}/?s=${encodeURIComponent(query.title)}&post_type=wp-manga&paged=${page}`
-            : `${BASE_URL}/manga/?page=${page}`;
+            ? `${BASE_URL}/lista?s=${encodeURIComponent(query.title)}&page=${page}`
+            : `${BASE_URL}/lista?page=${page}`;
         
         const request = createRequestObject({
             url: searchUrl,
@@ -435,14 +469,16 @@ class MangaTV extends types_1.Source {
         const $ = this.cheerio.load(response.data);
 
         const tiles = [];
-        $('div.c-tabs-item__content, div.page-item-detail, article.post').each((i, el) => {
+        // MangaTV uses div.bs.styletere > div.bsx > a for manga cards
+        $('div.bs div.bsx a').each((i, el) => {
             const $el = $(el);
-            const link = $el.find('a').first().attr('href') || "";
-            const title = $el.find('h3 a, .post-title a, h4 a').text().trim() || 
-                         $el.find('a').attr('title') || "Sin título";
-            const image = $el.find('img').attr('data-src') || $el.find('img').attr('src') || "";
+            const link = $el.attr('href') || "";
+            const title = $el.find('div.tt').text().trim() || $el.attr('title') || "Sin título";
+            let image = $el.find('img.ts-post-image').attr('src') || "";
+            if (image.startsWith('//')) image = 'https:' + image;
 
-            const idMatch = link.match(/\/manga\/([^\/]+)/);
+            // Extract ID: /manga/{id}/{slug}
+            const idMatch = link.match(/\/manga\/(\d+\/[^\/]+)/);
             const id = idMatch ? idMatch[1] : "";
 
             if (id) {
@@ -454,7 +490,7 @@ class MangaTV extends types_1.Source {
             }
         });
 
-        const hasNext = $('a.next, .nav-previous a, a.nextpostslink').length > 0;
+        const hasNext = $('a.next, a[rel="next"]').length > 0;
 
         return createPagedResults({
             results: tiles,
@@ -477,27 +513,27 @@ class MangaTV extends types_1.Source {
             id: 'popular',
             title: 'Populares',
             type: types_1.HomeSectionType.singleRowLarge,
-            view_more: true
+            view_more: false
         });
         sectionCallback(popularSection);
 
-        // Fetch latest
+        // Fetch latest from /lista
         const latestRequest = createRequestObject({
-            url: `${BASE_URL}/manga/`,
+            url: `${BASE_URL}/lista`,
             method: "GET"
         });
         const latestResponse = await this.requestManager.schedule(latestRequest, 1);
-        const $latest = this.cheerio.load(latestResponse.data);
+        const $ = this.cheerio.load(latestResponse.data);
 
         const latestTiles = [];
-        $latest('div.page-item-detail, div.c-tabs-item__content, article.post').slice(0, 15).each((i, el) => {
-            const $el = $latest(el);
-            const link = $el.find('a').first().attr('href') || "";
-            const title = $el.find('h3 a, .post-title a, h4 a').text().trim() || 
-                         $el.find('a').attr('title') || "";
-            const image = $el.find('img').attr('data-src') || $el.find('img').attr('src') || "";
+        $('div.bs div.bsx a').slice(0, 20).each((i, el) => {
+            const $el = $(el);
+            const link = $el.attr('href') || "";
+            const title = $el.find('div.tt').text().trim() || $el.attr('title') || "";
+            let image = $el.find('img.ts-post-image').attr('src') || "";
+            if (image.startsWith('//')) image = 'https:' + image;
 
-            const idMatch = link.match(/\/manga\/([^\/]+)/);
+            const idMatch = link.match(/\/manga\/(\d+\/[^\/]+)/);
             const id = idMatch ? idMatch[1] : "";
 
             if (id && title) {
@@ -511,7 +547,7 @@ class MangaTV extends types_1.Source {
         latestSection.items = latestTiles;
         sectionCallback(latestSection);
 
-        // For popular, use the same page but different selector if available
+        // For popular, use first 10 from latest
         popularSection.items = latestTiles.slice(0, 10);
         sectionCallback(popularSection);
     }
@@ -519,20 +555,21 @@ class MangaTV extends types_1.Source {
     async getViewMoreItems(homepageSectionId, metadata) {
         const page = metadata?.page ?? 1;
         const request = createRequestObject({
-            url: `${BASE_URL}/manga/?page=${page}`,
+            url: `${BASE_URL}/lista?page=${page}`,
             method: "GET"
         });
         const response = await this.requestManager.schedule(request, 1);
         const $ = this.cheerio.load(response.data);
 
         const tiles = [];
-        $('div.page-item-detail, div.c-tabs-item__content, article.post').each((i, el) => {
+        $('div.bs div.bsx a').each((i, el) => {
             const $el = $(el);
-            const link = $el.find('a').first().attr('href') || "";
-            const title = $el.find('h3 a, .post-title a, h4 a').text().trim() || "";
-            const image = $el.find('img').attr('data-src') || $el.find('img').attr('src') || "";
+            const link = $el.attr('href') || "";
+            const title = $el.find('div.tt').text().trim() || "";
+            let image = $el.find('img.ts-post-image').attr('src') || "";
+            if (image.startsWith('//')) image = 'https:' + image;
 
-            const idMatch = link.match(/\/manga\/([^\/]+)/);
+            const idMatch = link.match(/\/manga\/(\d+\/[^\/]+)/);
             const id = idMatch ? idMatch[1] : "";
 
             if (id && title) {
@@ -544,7 +581,7 @@ class MangaTV extends types_1.Source {
             }
         });
 
-        const hasNext = $('a.next, .nav-previous a, a.nextpostslink').length > 0;
+        const hasNext = $('a.next, a[rel="next"]').length > 0;
 
         return createPagedResults({
             results: tiles,
