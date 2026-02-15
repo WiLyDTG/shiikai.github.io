@@ -1,0 +1,28 @@
+{
+  "name": "shiikai-extensions",
+  "version": "1.0.0",
+  "description": "Paperback/Felii extensions for Spanish manga sites",
+  "scripts": {
+    "bundle": "node bundle.js"
+  },
+  "keywords": [
+    "paperback",
+    "extensions",
+    "manga"
+  ],
+  "author": "WiLyDTG",
+  "license": "MIT",
+  "devDependencies": {
+    "@paperback/toolchain": "^1.0.0-alpha.57",
+    "@types/node": "^25.2.3",
+    "browserify": "^17.0.0",
+    "browserify-shim": "^3.8.16",
+    "typescript": "^5.9.3",
+    "webpack": "^5.105.2",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "@paperback/types": "^1.0.0-alpha.57",
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
