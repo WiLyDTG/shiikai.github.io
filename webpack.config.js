@@ -1,11 +1,11 @@
 const path = require('path');
 
-module.exports = {
+module.exports = (env = {}) => ({
     mode: 'production',
-    entry: './0.8/MangaTV/index.js',
+    entry: env.entry || './0.8/MangaTV/index.js',
     output: {
         path: path.resolve(__dirname, '0.8/MangaTV'),
-        filename: 'index.bundle.js',
+        filename: env.filename || 'index.bundle.js',
         library: {
             name: 'Sources',
             type: 'umd',
@@ -17,4 +17,4 @@ module.exports = {
         extensions: ['.js']
     },
     target: ['web', 'es5']
-};
+});
