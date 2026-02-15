@@ -352,23 +352,17 @@ class MangaTV extends types_1.Source {
         let image = $('div.thumb img').attr('src') || $('img.ts-post-image').first().attr('src') || "";
         if (image.startsWith('//')) image = 'https:' + image;
         
-        // Description - try multiple methods
+        // Description - extract from raw HTML with regex (most reliable)
         let desc = "Sin descripción";
-        // Method 1: Find div.wd-full with Sinopsis label
-        $('div.wd-full').each((_, el) => {
-            const $el = $(el);
-            const labelText = $el.find('b').text().trim();
-            if (labelText.toLowerCase().includes('sinopsis')) {
-                const spanText = $el.find('span').text().trim();
-                if (spanText) desc = spanText;
-            }
-        });
-        // Method 2: Try regex on raw HTML if still no description
-        if (desc === "Sin descripción") {
-            const sinopsisMatch = response.data.match(/Sinopsis<\/b><span>([^<]+)/i);
-            if (sinopsisMatch && sinopsisMatch[1]) {
-                desc = sinopsisMatch[1].trim();
-            }
+        const sinopsisMatch = response.data.match(/Sinopsis<\/b><span>(.*?)<\/span>/is);
+        if (sinopsisMatch && sinopsisMatch[1]) {
+            desc = sinopsisMatch[1].trim()
+                .replace(/<[^>]+>/g, '') // Remove any HTML tags
+                .replace(/&quot;/g, '"')
+                .replace(/&#039;/g, "'")
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>');
         }
         
         let status = 0;
