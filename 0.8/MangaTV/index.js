@@ -286,12 +286,32 @@ const types_1 = require("@paperback/types");
 
 const BASE_URL = "https://mangatv.net";
 
-// Helper function to decode base64
+// Base64 decode implementation (no atob dependency)
+const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 function decodeBase64(str) {
     try {
         // Pad the string if necessary
-        const padded = str.padEnd(str.length + (4 - str.length % 4) % 4, '=');
-        return decodeURIComponent(escape(atob(padded)));
+        let padded = str;
+        while (padded.length % 4 !== 0) {
+            padded += '=';
+        }
+        
+        let output = '';
+        for (let i = 0; i < padded.length; i += 4) {
+            const enc1 = BASE64_CHARS.indexOf(padded.charAt(i));
+            const enc2 = BASE64_CHARS.indexOf(padded.charAt(i + 1));
+            const enc3 = BASE64_CHARS.indexOf(padded.charAt(i + 2));
+            const enc4 = BASE64_CHARS.indexOf(padded.charAt(i + 3));
+            
+            const chr1 = (enc1 << 2) | (enc2 >> 4);
+            const chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+            const chr3 = ((enc3 & 3) << 6) | enc4;
+            
+            output += String.fromCharCode(chr1);
+            if (enc3 !== 64) output += String.fromCharCode(chr2);
+            if (enc4 !== 64) output += String.fromCharCode(chr3);
+        }
+        return output;
     } catch (e) {
         return null;
     }
@@ -381,8 +401,10 @@ class MangaTV extends types_1.Source {
         const $ = this.cheerio.load(response.data);
 
         const chapters = [];
+        const seenChapNums = new Set();
+        
         // MangaTV uses li with div.chbox containing the chapter links
-        $('ul.clstyle li, li[data-num]').each((i, el) => {
+        $('ul.clstyle li').each((i, el) => {
             const $el = $(el);
             const link = $el.find('a.dload').attr('href') || $el.find('div.dt a').attr('href') || "";
             
@@ -398,6 +420,10 @@ class MangaTV extends types_1.Source {
             const chapterText = $el.find('span.chapternum').first().text().trim();
             const chapNumMatch = chapterText.match(/(\d+(?:\.\d+)?)/);
             const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : i + 1;
+
+            // Skip duplicate chapter numbers (take only first translation)
+            if (seenChapNums.has(chapNum)) return;
+            seenChapNums.add(chapNum);
 
             // Get date
             const dateText = $el.find('span.chapterdate').text().trim();
