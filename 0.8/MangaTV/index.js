@@ -32,7 +32,7 @@ const MANGATV_DOMAIN = "https://mangatv.net";
 
 // Source Info
 exports.MangaTVInfo = {
-    version: '1.0.0',
+    version: '1.0.1',
     name: 'MangaTV',
     icon: 'icon.png',
     author: 'WiLyDTG',
@@ -44,7 +44,7 @@ exports.MangaTVInfo = {
         { text: 'Spanish', type: 'info' },
         { text: 'Manga', type: 'success' }
     ],
-    intents: 21
+    intents: 5
 };
 
 // Source Class
@@ -291,13 +291,6 @@ class MangaTV extends Source {
         return createPagedResults({
             results: results,
             metadata: hasNext ? { page: page + 1 } : undefined
-        });
-    }
-
-    getCloudflareBypassRequest() {
-        return createRequestObject({
-            url: MANGATV_DOMAIN,
-            method: "GET"
         });
     }
 }
