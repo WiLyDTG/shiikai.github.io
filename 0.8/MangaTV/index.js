@@ -4,18 +4,52 @@
   HomeSectionType,
 } from '@paperback/types/lib/compat/0.8/types.js';
 
-// Polyfill de funciones globales para Paperback 0.8
-const createRequestManager = (info) => globalThis.App?.createRequestManager?.(info) ?? info;
-const createRequestObject = (info) => globalThis.App?.createRequestObject?.(info) ?? info;
-const createManga = (info) => globalThis.App?.createManga?.(info) ?? info;
-const createChapter = (info) => globalThis.App?.createChapter?.(info) ?? info;
-const createChapterDetails = (info) => globalThis.App?.createChapterDetails?.(info) ?? info;
-const createMangaTile = (info) => globalThis.App?.createMangaTile?.(info) ?? info;
-const createHomeSection = (info) => globalThis.App?.createHomeSection?.(info) ?? info;
-const createPagedResults = (info) => globalThis.App?.createPagedResults?.(info) ?? info;
-const createTag = (info) => globalThis.App?.createTag?.(info) ?? info;
-const createTagSection = (info) => globalThis.App?.createTagSection?.(info) ?? info;
-const createIconText = (info) => globalThis.App?.createIconText?.(info) ?? info;
+// Funciones de creacion para Paperback 0.8
+// El proxy App.create* simplemente devuelve el objeto pasado
+const createRequestManager = (info) => {
+  if (typeof globalThis !== 'undefined' && globalThis.App?.createRequestManager) {
+    return globalThis.App.createRequestManager(info);
+  }
+  return info;
+};
+const createRequestObject = (info) => info;
+const createManga = (info) => ({
+  id: info.id,
+  mangaInfo: {
+    titles: info.titles || [info.title],
+    image: info.image,
+    status: info.status,
+    author: info.author,
+    artist: info.artist,
+    tags: info.tags,
+    desc: info.desc,
+    rating: info.rating
+  }
+});
+const createChapter = (info) => info;
+const createChapterDetails = (info) => ({
+  id: info.id,
+  mangaId: info.mangaId,
+  pages: info.pages
+});
+const createMangaTile = (info) => ({
+  id: info.id,
+  mangaId: info.id,
+  title: typeof info.title === 'string' ? info.title : info.title?.text || '',
+  image: info.image,
+  subtitle: typeof info.subtitleText === 'string' ? info.subtitleText : info.subtitleText?.text || ''
+});
+const createHomeSection = (info) => ({
+  id: info.id,
+  title: info.title,
+  type: info.type,
+  containsMoreItems: info.view_more || info.containsMoreItems || false,
+  items: info.items || []
+});
+const createPagedResults = (info) => info;
+const createTag = (info) => info;
+const createTagSection = (info) => info;
+const createIconText = (info) => info.text || info;
 
 const MANGATV_DOMAIN = 'https://mangatv.net';
 

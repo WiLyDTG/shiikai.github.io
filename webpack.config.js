@@ -8,8 +8,7 @@ module.exports = (env = {}) => ({
         filename: env.filename || 'index.bundle.js',
         library: {
             name: 'Sources',
-            type: 'umd',
-            export: 'default'
+            type: 'umd'
         },
         globalObject: 'this'
     },
