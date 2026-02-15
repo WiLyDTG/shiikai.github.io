@@ -4,11 +4,11 @@ Extensión de Paperback/Felii para scrapear manga desde [mangatv.net](https://ma
 
 ## Características
 
-- **Múltiples selectores CSS**: La extensión utiliza múltiples selectores para garantizar compatibilidad con cambios en la estructura del sitio web
-- **Manejo robusto de errores**: Incluye try-catch y logging para facilitar el debugging
-- **Headers HTTP adecuados**: Evita bloqueos mediante headers de navegador completos
-- **Soporte para múltiples formatos**: Compatible con diferentes estructuras de URL y formatos de imágenes
-- **Extracción optimizada**: Busca elementos con múltiples métodos alternativos
+- **Múltiples selectores CSS**: La extensión utiliza múltiples selectores para garantizar compatibilidad con cambios en la estructura del sitio web.
+- **Manejo robusto de errores**: Incluye try-catch y logging para facilitar el debugging.
+- **Headers HTTP adecuados**: Evita bloqueos mediante headers de navegador completos.
+- **Soporte para múltiples formatos**: Compatible con diferentes estructuras de URL y formatos de imágenes.
+- **Extracción optimizada**: Busca elementos con múltiples métodos alternativos.
 
 ## Instalación
 

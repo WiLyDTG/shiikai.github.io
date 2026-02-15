@@ -321,6 +321,7 @@ class MangaTV extends Source {
             
             for (const selector of selectors) {
                 $(selector).each((i, el) => {
+                    // Return false breaks the Cheerio .each() loop
                     if (i >= MAX_HOMEPAGE_ITEMS) return false;
                     
                     const $el = $(el);
