@@ -1,0 +1,278 @@
+import {
+    Source,
+    Manga,
+    Chapter,
+    ChapterDetails,
+    HomeSection,
+    SearchRequest,
+    PagedResults,
+    SourceInfo,
+    ContentRating,
+    MangaTile,
+    HomeSectionType,
+    Request,
+    Response,
+    RequestManager,
+    TagSection
+} from '@paperback/types'
+
+const MANGATV_DOMAIN = 'https://mangatv.net'
+
+export const MangaTVInfo: SourceInfo = {
+    version: '1.0.2',
+    name: 'MangaTV',
+    icon: 'icon.png',
+    author: 'WiLyDTG',
+    authorWebsite: 'https://github.com/WiLyDTG',
+    description: 'Extension para leer manga desde mangatv.net',
+    contentRating: ContentRating.MATURE,
+    websiteBaseURL: MANGATV_DOMAIN,
+    sourceTags: [
+        { text: 'Spanish', type: 'info' },
+        { text: 'Manga', type: 'success' }
+    ],
+    intents: 0x05 // MANGA_CHAPTERS | HOMEPAGE_SECTIONS
+}
+
+export class MangaTV extends Source {
+    requestManager: RequestManager = createRequestManager({
+        requestsPerSecond: 3,
+        requestTimeout: 15000,
+        interceptor: {
+            interceptRequest: async (request: Request): Promise<Request> => {
+                request.headers = {
+                    ...(request.headers ?? {}),
+                    'Referer': MANGATV_DOMAIN,
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+                }
+                return request
+            },
+            interceptResponse: async (response: Response): Promise<Response> => {
+                return response
+            }
+        }
+    })
+
+    getMangaShareUrl(mangaId: string): string {
+        return `${MANGATV_DOMAIN}/manga/${mangaId}`
+    }
+
+    async getMangaDetails(mangaId: string): Promise<Manga> {
+        const request = createRequestObject({
+            url: `${MANGATV_DOMAIN}/manga/${mangaId}`,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+
+        const title = $('h1.text-2xl').first().text().trim() || $('h1').first().text().trim() || 'Sin título'
+        const image = $('img[alt*="cover"], img[alt*="portada"], .cover img, article img').first().attr('src') || ''
+        const desc = $('p.text-sm.text-gray-300, .description, .sinopsis').first().text().trim() || ''
+        const author = $('span:contains("Autor") + span, a[href*="autor"]').first().text().trim() || 'Desconocido'
+        const artist = $('span:contains("Artista") + span, a[href*="artista"]').first().text().trim() || ''
+
+        let status = 0
+        const statusText = $('span:contains("Estado") + span, .status').first().text().toLowerCase()
+        if (statusText.includes('finalizado') || statusText.includes('completado')) {
+            status = 1
+        } else if (statusText.includes('pausado') || statusText.includes('hiatus')) {
+            status = 2
+        }
+
+        const tags: TagSection[] = []
+
+        return createManga({
+            id: mangaId,
+            titles: [title],
+            image: image,
+            rating: 0,
+            status: status,
+            author: author,
+            artist: artist,
+            desc: desc,
+            tags: tags
+        })
+    }
+
+    async getChapters(mangaId: string): Promise<Chapter[]> {
+        const request = createRequestObject({
+            url: `${MANGATV_DOMAIN}/manga/${mangaId}`,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        const chapters: Chapter[] = []
+
+        $('a[href*="/leer/"]').each((index, el) => {
+            const href = $(el).attr('href') || ''
+            const chapterIdMatch = href.match(/\/leer\/([^\/]+)/)
+            if (!chapterIdMatch) return
+
+            const chapterId = chapterIdMatch[1]
+            const chapterText = $(el).text().trim()
+            const chapNumMatch = chapterText.match(/cap[íi]tulo\s*(\d+(?:\.\d+)?)/i) || chapterText.match(/(\d+(?:\.\d+)?)/)
+            const chapNum = chapNumMatch ? parseFloat(chapNumMatch[1]) : index + 1
+
+            chapters.push(createChapter({
+                id: chapterId,
+                mangaId: mangaId,
+                name: chapterText || `Capítulo ${chapNum}`,
+                chapNum: chapNum,
+                time: new Date(),
+                langCode: '🇪🇸'
+            }))
+        })
+
+        return chapters.reverse()
+    }
+
+    async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+        const request = createRequestObject({
+            url: `${MANGATV_DOMAIN}/leer/${chapterId}`,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        const pages: string[] = []
+
+        $('img[src*="img"], img[data-src*="img"], .reader img, .chapter-images img, picture img').each((_, el) => {
+            let src = $(el).attr('data-src') || $(el).attr('src') || ''
+            if (src && (src.includes('img') || src.includes('mangatv'))) {
+                if (!src.startsWith('http')) {
+                    src = src.startsWith('//') ? `https:${src}` : `${MANGATV_DOMAIN}${src}`
+                }
+                if (!pages.includes(src)) {
+                    pages.push(src)
+                }
+            }
+        })
+
+        return createChapterDetails({
+            id: chapterId,
+            mangaId: mangaId,
+            pages: pages
+        })
+    }
+
+    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
+        const page = metadata?.page ?? 1
+        const searchUrl = query.title
+            ? `${MANGATV_DOMAIN}/?s=${encodeURIComponent(query.title)}&post_type=wp-manga&paged=${page}`
+            : `${MANGATV_DOMAIN}/page/${page}/`
+
+        const request = createRequestObject({
+            url: searchUrl,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        const results: MangaTile[] = []
+
+        $('article, .manga-item, .post-item, a[href*="/manga/"]').each((_, el) => {
+            const linkEl = $(el).is('a') ? $(el) : $(el).find('a[href*="/manga/"]').first()
+            const href = linkEl.attr('href') || ''
+            const idMatch = href.match(/\/manga\/(\d+\/[^\/]+)/)
+            if (!idMatch) return
+
+            const id = idMatch[1]
+            const title = $(el).find('h2, h3, .title, .name').first().text().trim() || linkEl.text().trim()
+            const image = $(el).find('img').first().attr('src') || $(el).find('img').first().attr('data-src') || ''
+
+            if (id && title) {
+                results.push(createMangaTile({
+                    id: id,
+                    title: createIconText({ text: title }),
+                    image: image
+                }))
+            }
+        })
+
+        const hasNext = $('a.next, .pagination a:contains("Siguiente"), a[rel="next"]').length > 0
+        return createPagedResults({
+            results: results,
+            metadata: hasNext ? { page: page + 1 } : undefined
+        })
+    }
+
+    async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
+        const latestSection = createHomeSection({
+            id: 'latest',
+            title: 'Últimas Actualizaciones',
+            type: HomeSectionType.singleRowNormal,
+            view_more: true
+        })
+        sectionCallback(latestSection)
+
+        const request = createRequestObject({
+            url: MANGATV_DOMAIN,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+
+        const latestTiles: MangaTile[] = []
+        $('article, .manga-item, a[href*="/manga/"]').slice(0, 20).each((_, el) => {
+            const linkEl = $(el).is('a') ? $(el) : $(el).find('a[href*="/manga/"]').first()
+            const href = linkEl.attr('href') || ''
+            const idMatch = href.match(/\/manga\/(\d+\/[^\/]+)/)
+            if (!idMatch) return
+
+            const id = idMatch[1]
+            const title = $(el).find('h2, h3, .title').first().text().trim() || linkEl.text().trim()
+            const image = $(el).find('img').first().attr('src') || ''
+
+            if (id && title) {
+                latestTiles.push(createMangaTile({
+                    id: id,
+                    title: createIconText({ text: title }),
+                    image: image
+                }))
+            }
+        })
+
+        latestSection.items = latestTiles
+        sectionCallback(latestSection)
+    }
+
+    async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
+        const page = metadata?.page ?? 1
+        const request = createRequestObject({
+            url: `${MANGATV_DOMAIN}/page/${page}/`,
+            method: 'GET'
+        })
+
+        const response = await this.requestManager.schedule(request, 1)
+        const $ = this.cheerio.load(response.data)
+        const results: MangaTile[] = []
+
+        $('article, .manga-item, a[href*="/manga/"]').each((_, el) => {
+            const linkEl = $(el).is('a') ? $(el) : $(el).find('a[href*="/manga/"]').first()
+            const href = linkEl.attr('href') || ''
+            const idMatch = href.match(/\/manga\/(\d+\/[^\/]+)/)
+            if (!idMatch) return
+
+            const id = idMatch[1]
+            const title = $(el).find('h2, h3, .title').first().text().trim() || linkEl.text().trim()
+            const image = $(el).find('img').first().attr('src') || ''
+
+            if (id && title) {
+                results.push(createMangaTile({
+                    id: id,
+                    title: createIconText({ text: title }),
+                    image: image
+                }))
+            }
+        })
+
+        const hasNext = $('a.next, .pagination a:contains("Siguiente")').length > 0
+        return createPagedResults({
+            results: results,
+            metadata: hasNext ? { page: page + 1 } : undefined
+        })
+    }
+}
