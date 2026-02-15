@@ -352,8 +352,16 @@ class MangaTV extends types_1.Source {
         let image = $('div.thumb img').attr('src') || $('img.ts-post-image').first().attr('src') || "";
         if (image.startsWith('//')) image = 'https:' + image;
         
-        // Description - Sinopsis is always at index 3 in wd-full divs
-        const desc = $('div.wd-full').eq(3).find('span').text().trim() || "Sin descripción";
+        // Description - use regex on raw HTML (most reliable method)
+        let desc = "Sin descripción";
+        const descMatch = response.data.match(/Sinopsis<\/b><span>([^<]+)/i);
+        if (descMatch && descMatch[1]) {
+            desc = descMatch[1]
+                .replace(/&#039;/g, "'")
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, '&')
+                .trim();
+        }
         
         let status = 0;
         const statusText = ($('div.imptdt:contains("Estado") i').text() || 
